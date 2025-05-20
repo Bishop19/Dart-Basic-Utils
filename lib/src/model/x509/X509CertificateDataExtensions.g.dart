@@ -26,6 +26,7 @@ X509CertificateDataExtensions _$X509CertificateDataExtensionsFromJson(
       cRLDistributionPoints: (json['cRLDistributionPoints'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList(),
+      customExtensions: json['customExtensions'] as Map<String, dynamic>?,
     );
 
 Map<String, dynamic> _$X509CertificateDataExtensionsToJson(
@@ -47,6 +48,7 @@ Map<String, dynamic> _$X509CertificateDataExtensionsToJson(
   writeNotNull('pathLenConstraint', instance.pathLenConstraint);
   writeNotNull('vmc', instance.vmc?.toJson());
   writeNotNull('cRLDistributionPoints', instance.cRLDistributionPoints);
+  writeNotNull('customExtensions', instance.customExtensions);
   return val;
 }
 

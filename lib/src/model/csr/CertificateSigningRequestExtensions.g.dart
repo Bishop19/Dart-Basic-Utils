@@ -13,6 +13,7 @@ CertificateSigningRequestExtensions
               (json['subjectAlternativNames'] as List<dynamic>?)
                   ?.map((e) => e as String)
                   .toList(),
+          customExtensions: json['customExtensions'] as Map<String, dynamic>?,
         );
 
 Map<String, dynamic> _$CertificateSigningRequestExtensionsToJson(
@@ -26,5 +27,6 @@ Map<String, dynamic> _$CertificateSigningRequestExtensionsToJson(
   }
 
   writeNotNull('subjectAlternativNames', instance.subjectAlternativNames);
+  writeNotNull('customExtensions', instance.customExtensions);
   return val;
 }

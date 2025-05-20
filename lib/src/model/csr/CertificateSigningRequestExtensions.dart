@@ -18,9 +18,11 @@ class CertificateSigningRequestExtensions {
   // certificatePolicies
   // authorityInfoAccess => OCSP und caIssuers
 
-  CertificateSigningRequestExtensions({
-    this.subjectAlternativNames,
-  });
+  // Custom extensions that are not defined on RFC 5280
+  Map<String, dynamic>? customExtensions;
+
+  CertificateSigningRequestExtensions(
+      {this.subjectAlternativNames, this.customExtensions});
 
   /*
    * Json to CertificateSigningRequestExtensions object

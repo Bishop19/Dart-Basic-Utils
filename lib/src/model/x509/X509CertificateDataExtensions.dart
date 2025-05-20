@@ -31,6 +31,9 @@ class X509CertificateDataExtensions {
   /// The distribution points for the crl files. Normally a url.
   List<String>? cRLDistributionPoints;
 
+  // Custom extensions defined by the ISO that are not on RFC 5280
+  Map<String, dynamic>? customExtensions;
+
   X509CertificateDataExtensions({
     this.subjectAlternativNames,
     this.extKeyUsage,
@@ -39,6 +42,7 @@ class X509CertificateDataExtensions {
     this.pathLenConstraint,
     this.vmc,
     this.cRLDistributionPoints,
+    this.customExtensions,
   });
 
   /*
