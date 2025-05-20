@@ -554,9 +554,21 @@ class X509Utils {
   /// * SHA-384
   /// * SHA-512
   ///
-  static String generateEccCsrPem(Map<String, String> attributes,
-      ECPrivateKey privateKey, ECPublicKey publicKey,
-      {List<String>? san, String signingAlgorithm = 'SHA-256'}) {
+  /// [extensions] defines custom extensions to be placed within the CSR. 
+  /// Each extension should have a valid OID. Valid types for an extension value are:
+  /// * int
+  /// * String
+  /// * List<String>
+  /// * bool
+  /// 
+  static String generateEccCsrPem(
+    Map<String, String> attributes,
+    ECPrivateKey privateKey,
+    ECPublicKey publicKey, {
+    List<String>? san,
+    String signingAlgorithm = 'SHA-256',
+    Map<String, dynamic>? extensions,
+  }) {
     if (!_validRsaSigner.contains(signingAlgorithm)) {
       ArgumentError('Signingalgorithm $signingAlgorithm not supported!');
     }
@@ -567,32 +579,70 @@ class X509Utils {
     blockDN.add(ASN1Integer(BigInt.from(0)));
     blockDN.add(encodedDN);
     blockDN.add(publicKeySequence);
-    // Check if extensions are needed
+
+    // Compatibility with old code (subjectAltName)
     if (san != null && san.isNotEmpty) {
-      var outerBlockExt = ASN1Sequence();
-      outerBlockExt.add(ASN1ObjectIdentifier.fromName('extensionRequest'));
+      extensions ??= {};
+      extensions['2.5.29.17'] = san;
+    }
 
-      var setExt = ASN1Set();
+    if (extensions != null && extensions.isNotEmpty) {
+      // Extensions -> Sequence(OID, Set)
+      // Set -> Sequence(Extension[])
+      // Extension -> Sequence(OID, Critical?, Value)
+      // Value -> OctetString(ASN1Object)
+      var extensionsSeq = ASN1Sequence();
+      extensionsSeq.add(ASN1ObjectIdentifier.fromName('extensionRequest'));
 
-      var innerBlockExt = ASN1Sequence();
+      var extensionsSet = ASN1Set();
+      var setSeq = ASN1Sequence();
 
-      var sanExtSeq = ASN1Sequence();
-      sanExtSeq.add(ASN1ObjectIdentifier.fromName('subjectAltName'));
-      var sanSeq = ASN1Sequence();
-      for (var s in san) {
-        var sanIa5 = ASN1IA5String(stringValue: s, tag: 0x82);
-        sanSeq.add(sanIa5);
+      for (var ext in extensions.entries) {
+        var extension = ASN1Sequence();
+        ASN1ObjectIdentifier obj = ASN1ObjectIdentifier.fromIdentifierString(
+          ext.key,
+        );
+
+        extension.add(obj);
+        var critical = ASN1Boolean(false);
+        extension.add(critical);
+
+        // Creates the (subclass of) ASN1Object based on the type of the value
+        if (ext.value is int) {
+          var integerValue = ASN1Integer(BigInt.from(ext.value));
+          var octet = ASN1OctetString(octets: integerValue.encode());
+          extension.add(octet);
+          setSeq.add(extension);
+        } else if (ext.value is String) {
+          var stringValue = ASN1OctetString(
+            octets: Uint8List.fromList(ext.value.codeUnits),
+          );
+          var octet = ASN1OctetString(octets: stringValue.encode());
+          extension.add(octet);
+          setSeq.add(extension);
+        } else if (ext.value is List<String>) {
+          var listValue = ASN1Sequence();
+          for (var s in ext.value) {
+            var stringValue = ASN1IA5String(stringValue: s, tag: 0x82);
+            listValue.add(stringValue);
+          }
+          var octet = ASN1OctetString(octets: listValue.encode());
+          extension.add(octet);
+          setSeq.add(extension);
+        } else if (ext.value is bool) {
+          var booleanValue = ASN1Boolean(ext.value);
+          var octet = ASN1OctetString(octets: booleanValue.encode());
+          extension.add(octet);
+          setSeq.add(extension);
+        } else {
+          throw ArgumentError('Unsupported type for extension value');
+        }
       }
-      var octet = ASN1OctetString(octets: sanSeq.encode());
-      sanExtSeq.add(octet);
 
-      innerBlockExt.add(sanExtSeq);
+      extensionsSet.add(setSeq);
+      extensionsSeq.add(extensionsSet);
 
-      setExt.add(innerBlockExt);
-
-      outerBlockExt.add(setExt);
-
-      var asn1Null = ASN1OctetString(tag: 0xA0, octets: outerBlockExt.encode());
+      var asn1Null = ASN1OctetString(tag: 0xA0, octets: extensionsSeq.encode());
       //asn1Null.valueBytes = outerBlockExt.encode();
       blockDN.add(asn1Null);
     } else {
@@ -1841,6 +1891,7 @@ class X509Utils {
         tbsCertificateSeq.elements!.elementAt(element + 6) as ASN1Sequence;
     var subjectPublicKeyInfo = _getSubjectPublicKeyInfoFromSeq(pubKeySequence);
 
+    // Extensions
     var extensions;
     if (version > 1 && tbsCertificateSeq.elements!.length > element + 7) {
       var extensionObject = tbsCertificateSeq.elements!.elementAt(element + 7);
@@ -1974,14 +2025,14 @@ class X509Utils {
   }
 
   static X509CertificateDataExtensions _getExtensionsFromSeq(
-      ASN1Sequence extSequence) {
+    ASN1Sequence extSequence,
+  ) {
     List<String>? sans;
     List<KeyUsage>? keyUsage;
     List<ExtendedKeyUsage>? extKeyUsage;
     List<dynamic> basicConstraints;
     var extensions = X509CertificateDataExtensions();
-    extSequence.elements!.forEach(
-      (ASN1Object subseq) {
+    extSequence.elements!.forEach((ASN1Object subseq) {
         var seq = subseq as ASN1Sequence;
         var oi = seq.elements!.elementAt(0) as ASN1ObjectIdentifier;
         if (oi.objectIdentifierAsString == '2.5.29.17') {
@@ -1994,8 +2045,9 @@ class X509Utils {
         }
 
         var keyUsageSequence = ASN1Sequence();
-        keyUsageSequence
-            .add(ASN1ObjectIdentifier.fromIdentifierString('2.5.29.15'));
+      keyUsageSequence.add(
+        ASN1ObjectIdentifier.fromIdentifierString('2.5.29.15'),
+      );
 
         if (oi.objectIdentifierAsString == '2.5.29.15') {
           if (seq.elements!.length == 3) {
@@ -2004,39 +2056,40 @@ class X509Utils {
             keyUsage = _fetchKeyUsageFromExtension(seq.elements!.elementAt(1));
           }
           extensions.keyUsage = keyUsage;
-        }
-        if (oi.objectIdentifierAsString == '2.5.29.37') {
+      } else if (oi.objectIdentifierAsString == '2.5.29.37') {
           if (seq.elements!.length == 3) {
-            extKeyUsage =
-                _fetchExtendedKeyUsageFromExtension(seq.elements!.elementAt(2));
+          extKeyUsage = _fetchExtendedKeyUsageFromExtension(
+            seq.elements!.elementAt(2),
+          );
           } else {
-            extKeyUsage =
-                _fetchExtendedKeyUsageFromExtension(seq.elements!.elementAt(1));
+          extKeyUsage = _fetchExtendedKeyUsageFromExtension(
+            seq.elements!.elementAt(1),
+          );
           }
           extensions.extKeyUsage = extKeyUsage;
-        }
-        if (oi.objectIdentifierAsString == '2.5.29.19') {
+      } else if (oi.objectIdentifierAsString == '2.5.29.19') {
           if (seq.elements!.length == 3) {
-            basicConstraints =
-                _fetchBasicConstraintsFromExtension(seq.elements!.elementAt(2));
+          basicConstraints = _fetchBasicConstraintsFromExtension(
+            seq.elements!.elementAt(2),
+          );
           } else {
             basicConstraints = [null, null];
           }
 
           extensions.cA = basicConstraints[0];
           extensions.pathLenConstraint = basicConstraints[1];
-        }
-        if (oi.objectIdentifierAsString == '1.3.6.1.5.5.7.1.12') {
+      } else if (oi.objectIdentifierAsString == '1.3.6.1.5.5.7.1.12') {
           var vmcData = _fetchVmcLogo(seq.elements!.elementAt(1));
           extensions.vmc = vmcData;
-        }
-        if (oi.objectIdentifierAsString == '2.5.29.31') {
-          var cRLDistributionPoints =
-              _fetchCrlDistributionPoints(seq.elements!.elementAt(1));
+      } else if (oi.objectIdentifierAsString == '2.5.29.31') {
+        var cRLDistributionPoints = _fetchCrlDistributionPoints(
+          seq.elements!.elementAt(1),
+        );
           extensions.cRLDistributionPoints = cRLDistributionPoints;
+      } else {
+        extensions.customExtensions ??= {};
         }
-      },
-    );
+    });
     return extensions;
   }
 
@@ -2054,12 +2107,12 @@ class X509Utils {
     var pubInfo = _getSubjectPublicKeyInfoFromSeq(pubSeq);
 
     // Extensions
-    var extensions;
+    var extensions = CertificateSigningRequestExtensions();
+
     if (infoSeq.elements!.length == 4) {
       var extensionObject = infoSeq.elements!.elementAt(3);
       if (extensionObject.valueByteLength != 0) {
         List<String>? sans;
-        extensions = CertificateSigningRequestExtensions();
         var extParser = ASN1Parser(extensionObject.valueBytes);
         while (extParser.hasNext()) {
           var outerExtSequence = extParser.nextObject() as ASN1Sequence;
@@ -2072,7 +2125,9 @@ class X509Utils {
             extSequence.elements!.forEach((ASN1Object subseq) {
               var seq = subseq as ASN1Sequence;
               var oi = seq.elements!.elementAt(0) as ASN1ObjectIdentifier;
+              // Verifies if SAN is present
               if (oi.objectIdentifierAsString == '2.5.29.17') {
+                // Verifies if CRITICAL is present
                 if (seq.elements!.length == 3) {
                   sans = _fetchSansFromExtension(seq.elements!.elementAt(2));
                 } else {
@@ -2080,11 +2135,48 @@ class X509Utils {
                 }
                 extensions.subjectAlternativNames = sans;
               }
+              // Parse other extensions (including custom extensions)
+              // Each extension value is encoded as an ASN1OctetString
+              else {
+                extensions.customExtensions ??= {};
+                var extValue;
+
+                // Verifies if CRITICAL is present
+                var octet = (seq.elements!.length == 3
+                    ? seq.elements!.elementAt(2)
+                    : seq.elements!.elementAt(1)) as ASN1OctetString;
+
+                var extParser = ASN1Parser(octet.valueBytes);
+                var extElement = extParser.nextObject();
+
+                // Extension value is a List<String>
+                if (extElement is ASN1Sequence) {
+                  extValue = [];
+                  extElement.elements!.forEach((ASN1Object san) {
+                    var octectString =
+                        ASN1OctetString.fromBytes(san.encodedBytes!);
+                    extValue.add(utf8.decode(octectString.valueBytes!));
+                  });
+                } else if (extElement is ASN1Integer) {
+                  extValue = extElement.integer?.toInt();
+                } else if (extElement is ASN1OctetString) {
+                  extValue = utf8.decode(extElement.valueBytes!);
+                } else if (extElement is ASN1Boolean) {
+                  extValue = extElement.boolValue;
+                } else {
+                  throw ArgumentError('Unsupported type ${extElement.runtimeType}) for extension value');
+                }
+
+                // Add the extension value to the custom extensions map
+                extensions.customExtensions![oi.objectIdentifierAsString!] =
+                    extValue;
+              }
             });
           }
         }
       }
     }
+
     return bu.CertificationRequestInfo(
       version: asn1Version.integer!.toInt(),
       subject: subject,
