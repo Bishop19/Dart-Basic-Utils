@@ -31,6 +31,17 @@ class X509CertificateDataExtensions {
   /// The distribution points for the crl files. Normally a url.
   List<String>? cRLDistributionPoints;
 
+  /// The Suject Key Identifier Base64 encoded
+  String? subjectKeyIdentifier;
+
+  /// The Authority Key Identifier Base64 encoded
+  String? authorityKeyIdentifier;
+
+  /// The Authority Info Access extension. Contains OCSP and CA Issuers, for example.
+  ///
+  /// After parsing the X509 the format is as follows: "accessMethod::accessLocation"
+  List<String>? authorityInfoAccess;
+
   // Custom extensions defined by the ISO that are not on RFC 5280
   Map<String, dynamic>? customExtensions;
 
@@ -42,6 +53,9 @@ class X509CertificateDataExtensions {
     this.pathLenConstraint,
     this.vmc,
     this.cRLDistributionPoints,
+    this.subjectKeyIdentifier,
+    this.authorityKeyIdentifier,
+    this.authorityInfoAccess,
     this.customExtensions,
   });
 
