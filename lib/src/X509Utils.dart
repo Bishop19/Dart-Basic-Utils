@@ -2146,15 +2146,15 @@ class X509Utils {
             _fetchAuthorityInfoAccess(seq.elements!.elementAt(1));
         extensions.authorityInfoAccess = authorityInfoAccess;
       } else if (ObjectIdentifiers.getIdentifierByIdentifier(
-              oi.objectIdentifierAsString!) !=
+              oi.objectIdentifierAsString!) ==
           null) {
-        print("Parser for ${oi.objectIdentifierAsString} not implemented.");
-      } else {
         var extValue = _fetchCustomExtensionFromSeq(seq);
 
         // Add the extension value to the custom extensions map
         extensions.customExtensions ??= {};
         extensions.customExtensions![oi.objectIdentifierAsString!] = extValue;
+      } else {
+        print("Parser for ${oi.objectIdentifierAsString} not implemented.");
       }
     });
     return extensions;
