@@ -2142,7 +2142,6 @@ class X509Utils {
             _fetchSubjectKeyIdentifier(seq.elements!.elementAt(1));
         extensions.subjectKeyIdentifier = subjectKeyIdentifier;
       } else if (oi.objectIdentifierAsString == "1.3.6.1.5.5.7.1.1") {
-        print("Implement Authority Info Access");
         var authorityInfoAccess =
             _fetchAuthorityInfoAccess(seq.elements!.elementAt(1));
         extensions.authorityInfoAccess = authorityInfoAccess;
