@@ -18,7 +18,7 @@ class CertificateSigningRequestExtensions {
   // certificatePolicies
   // authorityInfoAccess => OCSP und caIssuers
 
-  // Custom extensions that are not defined on RFC 5280
+  /// Custom user defined extensions
   Map<String, dynamic>? customExtensions;
 
   CertificateSigningRequestExtensions(

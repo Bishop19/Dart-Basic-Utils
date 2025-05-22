@@ -42,7 +42,7 @@ class X509CertificateDataExtensions {
   /// After parsing the X509 the format is as follows: "accessMethod::accessLocation"
   List<String>? authorityInfoAccess;
 
-  // Custom extensions defined by the ISO that are not on RFC 5280
+  /// Custom user defined extensions
   Map<String, dynamic>? customExtensions;
 
   X509CertificateDataExtensions({
