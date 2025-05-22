@@ -34,10 +34,11 @@ import 'package:basic_utils/src/model/x509/X509CertificateData.dart';
 import 'package:basic_utils/src/model/x509/X509CertificateDataExtensions.dart';
 import 'package:basic_utils/src/model/x509/X509CertificatePublicKeyData.dart';
 import 'package:basic_utils/src/model/x509/X509CertificateValidity.dart';
-import 'package:pointycastle/asn1/unsupported_object_identifier_exception.dart';
 
 import 'package:pointycastle/export.dart';
 import 'package:pointycastle/pointycastle.dart';
+import 'package:pointycastle/asn1/object_identifiers.dart';
+import 'package:pointycastle/asn1/unsupported_object_identifier_exception.dart';
 
 ///
 /// Helper class for certificate operations.
@@ -587,9 +588,9 @@ class X509Utils {
     }
 
     if (extensions != null && extensions.isNotEmpty) {
-      // Extensions -> Sequence(OID, Set)
+      // Extensions -> Sequence(Extensions' OID, Set)
       // Set -> Sequence(Extension[])
-      // Extension -> Sequence(OID, Critical?, Value)
+      // Extension -> Sequence(custom OID, Critical?, Value)
       // Value -> OctetString(ASN1Object)
       var extensionsSeq = ASN1Sequence();
       extensionsSeq.add(ASN1ObjectIdentifier.fromName('extensionRequest'));
@@ -2027,6 +2028,55 @@ class X509Utils {
     );
   }
 
+  static _fetchSubjectKeyIdentifier(ASN1Object extData) {
+    var octet = extData as ASN1OctetString;
+    var parser = ASN1Parser(octet.valueBytes);
+    var keyIdentifier = parser.nextObject() as ASN1OctetString;
+    var hexKeyIdentifier = keyIdentifier.valueBytes!
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join('');
+
+    return hexKeyIdentifier;
+  }
+
+  // TODO: RFC defines a different structure for the authority key identifier
+  static _fetchAuthorityKeyIdentifier(ASN1Object extData) {
+    try {
+      var octet = extData as ASN1OctetString;
+      var parser = ASN1Parser(octet.valueBytes);
+      var extSeq = parser.nextObject() as ASN1Sequence;
+      var keyIdentifier = extSeq.elements!.elementAt(0);
+      var hexKeyIdentifier = keyIdentifier.valueBytes!
+          .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+          .join('');
+
+      return hexKeyIdentifier;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static _fetchAuthorityInfoAccess(ASN1Object extData) {
+    var authorityInfoAccess = <String>[];
+    var octet = extData as ASN1OctetString;
+    var parser = ASN1Parser(octet.valueBytes);
+    var extSeq = parser.nextObject() as ASN1Sequence;
+    extSeq.elements!.forEach((ASN1Object subseq) {
+      var seq = subseq as ASN1Sequence;
+      var accessMethod = seq.elements!.elementAt(0) as ASN1ObjectIdentifier;
+      var accessLocationParser = ASN1Parser(
+        seq.elements!.elementAt(1).encodedBytes,
+      );
+      var accessLocation =
+          utf8.decode(accessLocationParser.nextObject().valueBytes!);
+
+      authorityInfoAccess.add(
+        '${accessMethod.objectIdentifierAsString}::${accessLocation}',
+      );
+    });
+    return authorityInfoAccess;
+  }
+
   static X509CertificateDataExtensions _getExtensionsFromSeq(
     ASN1Sequence extSequence,
   ) {
@@ -2045,15 +2095,7 @@ class X509Utils {
           sans = _fetchSansFromExtension(seq.elements!.elementAt(1));
         }
         extensions.subjectAlternativNames = sans;
-      }
-
-      // Useless?
-      // var keyUsageSequence = ASN1Sequence();
-      // keyUsageSequence.add(
-      //   ASN1ObjectIdentifier.fromIdentifierString('2.5.29.15'),
-      // );
-
-      else if (oi.objectIdentifierAsString == '2.5.29.15') {
+      } else if (oi.objectIdentifierAsString == '2.5.29.15') {
         if (seq.elements!.length == 3) {
           keyUsage = _fetchKeyUsageFromExtension(seq.elements!.elementAt(2));
         } else {
@@ -2092,16 +2134,27 @@ class X509Utils {
         );
         extensions.cRLDistributionPoints = cRLDistributionPoints;
       } else if (oi.objectIdentifierAsString == '2.5.29.35') {
-        print("Implement Authority Key Identifier");
+        var authorityKeyIdentifier =
+            _fetchAuthorityKeyIdentifier(seq.elements!.elementAt(1));
+        extensions.authorityKeyIdentifier = authorityKeyIdentifier;
       } else if (oi.objectIdentifierAsString == "2.5.29.14") {
-        print("Implement Subject Key Identifier");
+        var subjectKeyIdentifier =
+            _fetchSubjectKeyIdentifier(seq.elements!.elementAt(1));
+        extensions.subjectKeyIdentifier = subjectKeyIdentifier;
       } else if (oi.objectIdentifierAsString == "1.3.6.1.5.5.7.1.1") {
         print("Implement Authority Info Access");
+        var authorityInfoAccess =
+            _fetchAuthorityInfoAccess(seq.elements!.elementAt(1));
+        extensions.authorityInfoAccess = authorityInfoAccess;
+      } else if (ObjectIdentifiers.getIdentifierByName(
+              oi.objectIdentifierAsString!) !=
+          null) {
+        print("Parser for ${oi.objectIdentifierAsString} not implemented.");
       } else {
-        extensions.customExtensions ??= {};
         var extValue = _fetchCustomExtensionFromSeq(seq);
 
         // Add the extension value to the custom extensions map
+        extensions.customExtensions ??= {};
         extensions.customExtensions![oi.objectIdentifierAsString!] = extValue;
       }
     });
@@ -2149,8 +2202,13 @@ class X509Utils {
                   sans = _fetchSansFromExtension(seq.elements!.elementAt(1));
                 }
                 extensions.subjectAlternativNames = sans;
+              } else if (ObjectIdentifiers.getIdentifierByName(
+                      oi.objectIdentifierAsString!) !=
+                  null) {
+                print(
+                    "Parser for ${oi.objectIdentifierAsString} not implemented.");
               }
-              // Parse other extensions (including custom extensions)
+              // Parse custom extensions
               // Each extension value is encoded as an ASN1OctetString
               else {
                 extensions.customExtensions ??= {};
