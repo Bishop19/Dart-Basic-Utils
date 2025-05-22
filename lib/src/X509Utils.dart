@@ -2145,7 +2145,7 @@ class X509Utils {
         var authorityInfoAccess =
             _fetchAuthorityInfoAccess(seq.elements!.elementAt(1));
         extensions.authorityInfoAccess = authorityInfoAccess;
-      } else if (ObjectIdentifiers.getIdentifierByName(
+      } else if (ObjectIdentifiers.getIdentifierByIdentifier(
               oi.objectIdentifierAsString!) !=
           null) {
         print("Parser for ${oi.objectIdentifierAsString} not implemented.");
@@ -2201,15 +2201,12 @@ class X509Utils {
                   sans = _fetchSansFromExtension(seq.elements!.elementAt(1));
                 }
                 extensions.subjectAlternativNames = sans;
-              } else if (ObjectIdentifiers.getIdentifierByName(
-                      oi.objectIdentifierAsString!) !=
-                  null) {
-                print(
-                    "Parser for ${oi.objectIdentifierAsString} not implemented.");
               }
               // Parse custom extensions
               // Each extension value is encoded as an ASN1OctetString
-              else {
+              else if (ObjectIdentifiers.getIdentifierByIdentifier(
+                      oi.objectIdentifierAsString!) ==
+                  null) {
                 extensions.customExtensions ??= {};
 
                 var extValue = _fetchCustomExtensionFromSeq(seq);
@@ -2217,6 +2214,9 @@ class X509Utils {
                 // Add the extension value to the custom extensions map
                 extensions.customExtensions![oi.objectIdentifierAsString!] =
                     extValue;
+              } else {
+                print(
+                    "Parser for ${oi.objectIdentifierAsString} not implemented.");
               }
             });
           }
@@ -2263,8 +2263,8 @@ class X509Utils {
     } else if (extElement is ASN1Boolean) {
       extValue = extElement.boolValue;
     } else {
-      throw ArgumentError(
-          'Unsupported type (${extElement.runtimeType}) for extension value');
+      // Unsupported types -> return the raw value
+      extValue = extElement.valueBytes;
     }
 
     return extValue;
